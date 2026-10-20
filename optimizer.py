@@ -52,3 +52,23 @@ def distance(point1, point2):
     return ((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2) ** 0.5
 
 
+def schedule_tasks(agents, tasks):
+    """
+    Schedules tasks for agents based on their capabilities and the task requirements.
+
+    Parameters:
+    agents (list): A list of agent objects, each with attributes defining their capabilities.
+    tasks (list): A list of task objects, each with attributes defining their requirements.
+
+    Returns:
+    dict: A dictionary mapping each agent to a list of scheduled tasks.
+    """
+    allocation = task_allocation(agents, tasks)
+    schedule = {}
+
+    for agent, assigned_tasks in allocation.items():
+        optimized_tasks = optimize_path(agent, assigned_tasks)
+        schedule[agent] = optimized_tasks
+
+    return schedule
+
