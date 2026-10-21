@@ -7,9 +7,11 @@ class Position(BaseModel):
     y: int = Field(ge=0)
 
 
+
 class Robot(BaseModel):
     id: str = Field(min_length=1)
     position: Position
+    speed: float = Field(default=1.0, gt=0)
 
 
 class Task(BaseModel):
@@ -17,6 +19,8 @@ class Task(BaseModel):
     name: str = Field(min_length=1)
     position: Position
     priority: int = Field(ge=1, le=5)
+    duration: float = Field(default=2.0, ge=0)
+
 
 
 class Warehouse(BaseModel):
