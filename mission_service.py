@@ -2,7 +2,7 @@
 from uuid import uuid4
 
 from models import Mission, Task, Position
-from allocator import allocate_tasks
+from optimizer import allocate_tasks
 
 
 class MissionService:
