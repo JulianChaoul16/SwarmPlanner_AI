@@ -1,0 +1,5 @@
+openai>=1.68,<4
+pydantic>=2,<3
+python-dotenv>=1,<2
+streamlit>=1.45,<2
+matplotlib>=3.10,<4

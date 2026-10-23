@@ -1,93 +1,89 @@
 import pytest
 
-from models import Position, Robot, Task, Warehouse
-from optimizer import NoPathError, a_star_path, optimize_path
+from models import Mission, Position, Robot, Task, Warehouse
+from optimizer import allocate_tasks, distance
 
 
-def test_a_star_routes_around_obstacle():
-    warehouse = Warehouse(
-        width=3,
-        height=3,
-        obstacles=[Position(x=1, y=0)],
-    )
-
-    path = a_star_path(
-        Position(x=0, y=0),
-        Position(x=2, y=0),
-        warehouse,
-    )
-
-    assert path[0] == Position(x=0, y=0)
-    assert path[-1] == Position(x=2, y=0)
-    assert len(path) == 5
-    assert Position(x=1, y=0) not in path
-    assert all(
-        abs(a.x - b.x) + abs(a.y - b.y) == 1
-        for a, b in zip(path, path[1:])
+def make_mission(robots, tasks):
+    return Mission(
+        id="mission-1",
+        objective="Inspect warehouse",
+        warehouse=Warehouse(width=20, height=20),
+        robots=robots,
+        tasks=tasks,
     )
 
 
-def test_a_star_raises_when_goal_is_unreachable():
-    warehouse = Warehouse(
-        width=3,
-        height=3,
-        obstacles=[
-            Position(x=1, y=0),
-            Position(x=1, y=1),
-            Position(x=1, y=2),
+def task(task_id, x, y=0, priority=1, duration=2.0):
+    return Task(
+        id=task_id, name=f"Inspect {task_id}",
+        position=Position(x=x, y=y), priority=priority, duration=duration,
+    )
+
+
+def test_distance_uses_euclidean_distance():
+    assert distance(Position(x=0, y=0), Position(x=3, y=4)) == pytest.approx(5)
+
+
+def test_schedules_by_priority_then_task_id():
+    mission = make_mission(
+        [Robot(id="R1", position=Position(x=0, y=0))],
+        [task("C", 1), task("B", 8, priority=5), task("A", 4, priority=5)],
+    )
+    plan = allocate_tasks(mission)
+    assert [a.task_id for a in plan.assignments] == ["A", "B", "C"]
+
+
+def test_tracks_robot_endpoint_workload_and_plan_totals():
+    mission = make_mission(
+        [Robot(id="R1", position=Position(x=0, y=0), speed=2)],
+        [task("A", 3, 4, duration=2), task("B", 6, 8, duration=3)],
+    )
+    plan = allocate_tasks(mission)
+    assert [a.robot_id for a in plan.assignments] == ["R1", "R1"]
+    assert [a.start_time for a in plan.assignments] == pytest.approx([0, 4.5])
+    assert [a.finish_time for a in plan.assignments] == pytest.approx([4.5, 10])
+    assert plan.makespan == pytest.approx(10)
+    assert plan.total_distance == pytest.approx(10)
+
+
+def test_selects_earliest_finishing_robot_including_speed_and_workload():
+    mission = make_mission(
+        [
+            Robot(id="near", position=Position(x=4, y=0)),
+            Robot(id="fast", position=Position(x=0, y=0), speed=10),
         ],
+        [task("A", 5, priority=5, duration=10), task("B", 5)],
     )
+    plan = allocate_tasks(mission)
+    assert [a.robot_id for a in plan.assignments] == ["fast", "near"]
+    assert [a.start_time for a in plan.assignments] == pytest.approx([0, 0])
+    assert [a.finish_time for a in plan.assignments] == pytest.approx([10.5, 3])
+    assert plan.makespan == pytest.approx(10.5)
+    assert plan.total_distance == pytest.approx(6)
 
-    with pytest.raises(NoPathError):
-        a_star_path(
-            Position(x=0, y=1),
-            Position(x=2, y=1),
-            warehouse,
-        )
 
-
-def test_optimize_path_raises_when_assigned_task_is_unreachable():
-    warehouse = Warehouse(
-        width=5,
-        height=3,
-        obstacles=[
-            Position(x=1, y=0),
-            Position(x=1, y=1),
-            Position(x=1, y=2),
+def test_equal_finish_times_favor_lower_workload():
+    mission = make_mission(
+        [
+            Robot(id="A", position=Position(x=0, y=0)),
+            Robot(id="B", position=Position(x=4, y=0)),
         ],
+        [task("first", 0, priority=5, duration=4), task("second", 0)],
     )
-    agent = Robot(id="robot-1", position=Position(x=0, y=1))
-    near_but_unreachable = Task(
-        id="task-b",
-        name="Across wall",
-        position=Position(x=2, y=1),
-        priority=5,
-    )
-    reachable = Task(
-        id="task-a",
-        name="Same side",
-        position=Position(x=0, y=2),
-        priority=1,
-    )
-
-    with pytest.raises(ValueError, match="No remaining task is reachable"):
-        optimize_path(agent, [near_but_unreachable, reachable], warehouse)
+    plan = allocate_tasks(mission)
+    assert [a.robot_id for a in plan.assignments] == ["A", "B"]
+    assert plan.assignments[1].finish_time == pytest.approx(6)
 
 
-def test_optimize_path_orders_reachable_tasks_by_a_star_distance():
-    warehouse = Warehouse(width=5, height=5)
-    agent = Robot(id="robot-1", position=Position(x=0, y=0))
-    farther = Task(
-        id="task-b",
-        name="Far task",
-        position=Position(x=4, y=4),
-        priority=5,
+def test_equal_finish_times_and_workloads_favor_robot_id():
+    mission = make_mission(
+        [
+            Robot(id="B", position=Position(x=0, y=0)),
+            Robot(id="A", position=Position(x=0, y=0)),
+        ],
+        [task("only", 1)],
     )
-    nearer = Task(
-        id="task-a",
-        name="Near task",
-        position=Position(x=1, y=0),
-        priority=1,
-    )
-
-    assert optimize_path(agent, [farther, nearer], warehouse) == [nearer, farther]
+    plan = allocate_tasks(mission)
+    assert len(plan.assignments) == 1
+    assert plan.assignments[0].robot_id == "A"
